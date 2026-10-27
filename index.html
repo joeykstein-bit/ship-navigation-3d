@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ship Navigation</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;700&display=swap">
+<style>
+  /* Layout: the game canvas fills the window at 16:9; a thin brass-and-wood strip below carries the controls. */
+  :root {
+    --wood: #1d120b;
+    --wood-deep: #120b07;
+    --brass: #c9a25a;
+    --parchment: #ead9b5;
+    --muted: #a8916c;
+    --display: "IM Fell English SC", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", "Gill Sans", "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(ellipse at 50% 35%, var(--wood) 0%, var(--wood-deep) 75%);
+    color: var(--parchment);
+    font-family: var(--body);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .stage {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding-block: 12px 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .frame {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    width: min(100%, calc((100vh - 84px) * 16 / 9));
+    max-width: 100%;
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 55%, transparent), 0 18px 50px rgb(0 0 0 / 0.6);
+    background: var(--wood-deep);
+    overflow: hidden;
+  }
+  #unity-canvas { width: 100%; height: 100%; display: block; background: var(--wood-deep); }
+  #unity-canvas:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
+  .loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 14px;
+    text-align: center;
+  }
+  .loading h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(26px, 4vw, 44px);
+    letter-spacing: 0.04em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .bar { width: min(320px, 60vw); height: 6px; margin: 0 auto; border-radius: 3px; background: color-mix(in srgb, var(--brass) 20%, transparent); overflow: hidden; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--brass); transition: width 0.2s; }
+  .loading p { margin: 0; color: var(--muted); font-size: 15px; }
+  .error { color: #f0a58f; max-width: 46ch; }
+  .strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 20px;
+    padding-block: 10px 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    font-size: 15px;
+    color: var(--muted);
+  }
+  .keys { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  kbd {
+    font-family: var(--body);
+    font-weight: 700;
+    color: var(--parchment);
+    border: 1px solid color-mix(in srgb, var(--brass) 60%, transparent);
+    border-radius: 4px;
+    padding: 0 6px;
+    margin-right: 4px;
+  }
+  button {
+    font: 700 14px var(--body);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--wood-deep);
+    background: var(--brass);
+    border: 0;
+    border-radius: 4px;
+    padding: 7px 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--parchment); }
+  button:focus-visible { outline: 2px solid var(--parchment); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main class="stage">
+  <div class="frame">
+    <canvas id="unity-canvas" tabindex="0" aria-label="Ship Navigation game"></canvas>
+    <div class="loading" id="loading">
+      <h1>Ship Navigation</h1>
+      <div class="bar" aria-hidden="true"><span id="progress"></span></div>
+      <p id="status">Loading the charts… about 19 MB</p>
+    </div>
+  </div>
+</main>
+<footer class="strip">
+  <div class="keys">
+    <span><kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> steer</span>
+    <span><kbd>Space</kbd> set sail</span>
+    <span><kbd>C</kbd> chart or deck view</span>
+  </div>
+  <button type="button" id="fullscreen">Full screen</button>
+</footer>
+
+<script>
+  const canvas = document.getElementById("unity-canvas");
+  const loading = document.getElementById("loading");
+  const progress = document.getElementById("progress");
+  const status = document.getElementById("status");
+  let game = null;
+
+  function showError(message) {
+    loading.hidden = false;
+    status.className = "error";
+    status.textContent = message;
+  }
+
+  const script = document.createElement("script");
+  script.src = "Build/ship.loader.js";
+  script.onerror = () => showError("The game files couldn't be loaded. Reload the page to try again.");
+  script.onload = () => {
+    createUnityInstance(canvas, {
+      dataUrl: "Build/ship.data.unityweb",
+      frameworkUrl: "Build/ship.framework.js.unityweb",
+      codeUrl: "Build/ship.wasm.unityweb",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "Ship Navigation",
+      productName: "Ship Navigation",
+      productVersion: "1.0",
+      showBanner: (message, type) => { if (type === "error") showError(message); },
+    }, (value) => {
+      progress.style.width = Math.round(value * 100) + "%";
+    }).then((instance) => {
+      game = instance;
+      loading.hidden = true;
+      canvas.focus();
+    }).catch((message) => showError(String(message)));
+  };
+  document.body.appendChild(script);
+
+  // Keyboard input goes to the game once its canvas has focus.
+  canvas.addEventListener("pointerdown", () => canvas.focus());
+
+  document.getElementById("fullscreen").addEventListener("click", () => {
+    if (game) {
+      try { game.SetFullscreen(1); } catch (error) { /* some app views have no fullscreen */ }
+    }
+    canvas.focus();
+  });
+</script>
+</body>
+</html>
