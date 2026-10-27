@@ -1,0 +1,9 @@
+{
+  "name": "Ship Navigation",
+  "short_name": "Ship Nav",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#120b07",
+  "theme_color": "#120b07"
+}

@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ship Navigation">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Ship Navigation</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;700&display=swap">
 <style>
@@ -101,6 +106,40 @@
     cursor: pointer;
   }
   button:hover { background: var(--parchment); }
+
+  /* Phones and tablets: the game fills the screen edge to edge and the keyboard strip goes away. */
+  .touch .stage { padding: 0; }
+  .touch .frame { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+  .touch .strip { display: none; }
+  .ready {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 16px;
+    padding: 24px;
+    text-align: center;
+    background: color-mix(in srgb, var(--wood-deep) 82%, transparent);
+  }
+  .ready h1 { font-family: var(--display); font-weight: 400; font-size: clamp(26px, 6vw, 44px); margin: 0; }
+  .ready .choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .ready button { font-size: 17px; padding: 12px 22px; }
+  .ready button.plain { background: transparent; color: var(--parchment); box-shadow: inset 0 0 0 1px var(--brass); }
+  .ready p { margin: 0; color: var(--muted); max-width: 40ch; font-size: 15px; }
+  .rotate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    place-content: center;
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+    background: var(--wood-deep);
+    font-size: 18px;
+  }
+  .rotate strong { font-family: var(--display); font-weight: 400; font-size: 30px; }
+  @media (orientation: portrait) { .touch .rotate { display: grid; } }
   button:focus-visible { outline: 2px solid var(--parchment); outline-offset: 2px; }
 </style>
 </head>
@@ -113,8 +152,17 @@
       <div class="bar" aria-hidden="true"><span id="progress"></span></div>
       <p id="status">Loading the charts… about 19 MB</p>
     </div>
+    <div class="ready" id="ready" hidden>
+      <h1>Ready to sail</h1>
+      <div class="choices">
+        <button type="button" id="play-full">Play full screen</button>
+        <button type="button" class="plain" id="play-here">Play here</button>
+      </div>
+      <p id="ready-note">Hold the arrow buttons to steer. Tap View to switch between the chart and the deck.</p>
+    </div>
   </div>
 </main>
+<div class="rotate" aria-live="polite"><strong>Turn your phone sideways</strong><span>The voyage plays in landscape.</span></div>
 <footer class="strip">
   <div class="keys">
     <span><kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> steer</span>
@@ -130,6 +178,23 @@
   const progress = document.getElementById("progress");
   const status = document.getElementById("status");
   let game = null;
+
+  const touchDevice = matchMedia("(pointer: coarse)").matches || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const canFullscreen = Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const homeScreenApp = matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches || navigator.standalone === true;
+  if (touchDevice) document.documentElement.classList.add("touch");
+
+  // Full screen for the whole page (the game fills it on phones), locked to landscape where the browser allows.
+  async function enterFullscreen() {
+    const root = document.documentElement;
+    try {
+      if (root.requestFullscreen) await root.requestFullscreen({ navigationUI: "hide" });
+      else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape").catch(() => {});
+    } catch (error) {
+      /* the browser refused; keep playing in the page */
+    }
+  }
 
   function showError(message) {
     loading.hidden = false;
@@ -149,6 +214,8 @@
       companyName: "Ship Navigation",
       productName: "Ship Navigation",
       productVersion: "1.0",
+      // Phones have very dense screens; capping the pixel ratio keeps the 3D sea smooth.
+      devicePixelRatio: touchDevice ? Math.min(window.devicePixelRatio || 1, 1.5) : undefined,
       showBanner: (message, type) => { if (type === "error") showError(message); },
     }, (value) => {
       progress.style.width = Math.round(value * 100) + "%";
@@ -156,6 +223,20 @@
       game = instance;
       loading.hidden = true;
       canvas.focus();
+      if (touchDevice && !homeScreenApp) {
+        const ready = document.getElementById("ready");
+        const full = document.getElementById("play-full");
+        if (!canFullscreen) {
+          // iPhone browsers can't make a page full screen; a home-screen shortcut opens it as a full-screen app.
+          full.hidden = true;
+          document.getElementById("play-here").className = "";
+          document.getElementById("ready-note").textContent =
+            "Hold the arrow buttons to steer. For full screen, tap Share, then Add to Home Screen, and open the game from there.";
+        }
+        ready.hidden = false;
+        full.addEventListener("click", () => { enterFullscreen(); ready.hidden = true; canvas.focus(); });
+        document.getElementById("play-here").addEventListener("click", () => { ready.hidden = true; canvas.focus(); });
+      }
     }).catch((message) => showError(String(message)));
   };
   document.body.appendChild(script);
